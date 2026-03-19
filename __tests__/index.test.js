@@ -53,6 +53,7 @@ const {
   getChangeFrequency,
   getReferenceCount,
   getAllSourceFiles,
+  checkShallowClone,
   run
 } = await import('../src/index.js');
 
@@ -522,6 +523,184 @@ describe('Fragile Action', () => {
       expect(files).toContain('src/index.js');
       expect(files).toContain('lib/utils.ts');
       expect(files).toContain('app.py');
+    });
+  });
+
+  describe('checkShallowClone', () => {
+    test('warns when shallow clone detected with few commits', async () => {
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args.includes('--count')) {
+          options?.listeners?.stdout?.(Buffer.from('1\n'));
+        } else if (args && args.includes('--is-shallow-repository')) {
+          options?.listeners?.stdout?.(Buffer.from('true\n'));
+        }
+        return Promise.resolve(0);
+      });
+
+      await checkShallowClone();
+
+      expect(mockCore.warning).toHaveBeenCalledWith(
+        expect.stringContaining('fetch-depth')
+      );
+    });
+
+    test('does not warn for full clone', async () => {
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args.includes('--count')) {
+          options?.listeners?.stdout?.(Buffer.from('100\n'));
+        } else if (args && args.includes('--is-shallow-repository')) {
+          options?.listeners?.stdout?.(Buffer.from('false\n'));
+        }
+        return Promise.resolve(0);
+      });
+
+      await checkShallowClone();
+
+      expect(mockCore.warning).not.toHaveBeenCalledWith(
+        expect.stringContaining('fetch-depth')
+      );
+    });
+  });
+
+  describe('OpenAI timeout handling', () => {
+    test('returns specific timeout message on TIMEOUT error', async () => {
+      const timeoutOpenAI = {
+        chat: {
+          completions: {
+            create: jest.fn().mockRejectedValue(new Error('TIMEOUT'))
+          }
+        }
+      };
+
+      const explanation = await getAIExplanation(timeoutOpenAI, 'test.js', 5, 10, 50);
+
+      expect(explanation).toContain('timed out');
+      expect(explanation).toContain('OpenAI API key');
+    });
+
+    test('returns generic error message for non-timeout errors', async () => {
+      const errorOpenAI = {
+        chat: {
+          completions: {
+            create: jest.fn().mockRejectedValue(new Error('Rate limit exceeded'))
+          }
+        }
+      };
+
+      const explanation = await getAIExplanation(errorOpenAI, 'test.js', 5, 10, 50);
+
+      expect(explanation).toContain('Unable to generate explanation');
+      expect(explanation).not.toContain('timed out');
+    });
+  });
+
+  describe('min_references edge cases', () => {
+    test('min_references=0 is treated as 1', async () => {
+      mockCore.getInput.mockImplementation((name) => {
+        if (name === 'openai_key') return 'test-key';
+        if (name === 'min_references') return '0';
+        if (name === 'top_n') return '10';
+        return '';
+      });
+
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args.includes('ls-files')) {
+          options?.listeners?.stdout?.(Buffer.from('src/index.js\n'));
+        } else if (args && args[0] === 'grep') {
+          // Return 1 reference to test min_references=1 behavior
+          options?.listeners?.stdout?.(Buffer.from('src/other.js\n'));
+        } else if (args && args.includes('--is-shallow-repository')) {
+          options?.listeners?.stdout?.(Buffer.from('false\n'));
+        } else if (args && args.includes('--count')) {
+          options?.listeners?.stdout?.(Buffer.from('100\n'));
+        } else if (args && args.includes('diff')) {
+          return Promise.resolve(0); // No changes
+        }
+        return Promise.resolve(0);
+      });
+
+      mockOpenAI.chat.completions.create.mockResolvedValue({
+        choices: [{ message: { content: 'Test explanation' } }]
+      });
+
+      await run();
+
+      // Should not fail - min_references of 0 treated as 1
+      expect(mockCore.setFailed).not.toHaveBeenCalled();
+    });
+
+    test('negative min_references is treated as 1', async () => {
+      mockCore.getInput.mockImplementation((name) => {
+        if (name === 'openai_key') return 'test-key';
+        if (name === 'min_references') return '-5';
+        if (name === 'top_n') return '10';
+        return '';
+      });
+
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args.includes('ls-files')) {
+          options?.listeners?.stdout?.(Buffer.from(''));
+        } else if (args && args.includes('--is-shallow-repository')) {
+          options?.listeners?.stdout?.(Buffer.from('false\n'));
+        } else if (args && args.includes('--count')) {
+          options?.listeners?.stdout?.(Buffer.from('100\n'));
+        } else if (args && args.includes('diff')) {
+          return Promise.resolve(0);
+        }
+        return Promise.resolve(0);
+      });
+
+      await run();
+
+      expect(mockCore.setFailed).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('multi-language reference counting', () => {
+    test('counts Python imports', async () => {
+      let capturedPattern = null;
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args[0] === 'grep') {
+          capturedPattern = args[3];
+          options?.listeners?.stdout?.(Buffer.from('app.py\nutils.py\n'));
+        }
+        return Promise.resolve(0);
+      });
+
+      const count = await getReferenceCount('src/module.py');
+
+      expect(capturedPattern).toContain('from');
+      expect(capturedPattern).toContain('import');
+      expect(count).toBe(2);
+    });
+
+    test('counts Ruby requires', async () => {
+      let capturedPattern = null;
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args[0] === 'grep') {
+          capturedPattern = args[3];
+          options?.listeners?.stdout?.(Buffer.from('app.rb\n'));
+        }
+        return Promise.resolve(0);
+      });
+
+      const count = await getReferenceCount('lib/helper.rb');
+
+      expect(capturedPattern).toContain('require_relative');
+      expect(count).toBe(1);
+    });
+
+    test('counts Go imports', async () => {
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args[0] === 'grep') {
+          options?.listeners?.stdout?.(Buffer.from('main.go\nhandler.go\n'));
+        }
+        return Promise.resolve(0);
+      });
+
+      const count = await getReferenceCount('pkg/utils.go');
+
+      expect(count).toBe(2);
     });
   });
 });

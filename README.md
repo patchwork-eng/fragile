@@ -6,6 +6,9 @@ Fragile analyzes your codebase to find load-bearing, undocumented, high-risk fil
 
 ## Quick Start
 
+> **Warning**
+> **`fetch-depth: 0` is REQUIRED.** Without full git history, Fragile cannot accurately count file changes over the last 90 days. This is the #1 setup mistake and will cause inaccurate results.
+
 ```yaml
 name: Fragile Analysis
 
@@ -22,14 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # REQUIRED: Full git history for accurate analysis
+          fetch-depth: 0  # <-- REQUIRED! Do not remove.
 
       - uses: patchwork-eng/fragile@v1
         with:
           openai_key: ${{ secrets.OPENAI_API_KEY }}
 ```
-
-> **Important:** `fetch-depth: 0` is **REQUIRED**. Without full git history, Fragile cannot accurately count file changes over the last 90 days. This is the #1 setup mistake.
 
 ## Inputs
 
