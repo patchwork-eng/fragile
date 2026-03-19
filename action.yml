@@ -18,7 +18,7 @@ inputs:
     required: false
     default: '10'
   min_references:
-    description: Minimum reference count to include a file
+    description: Minimum reference count to include a file (values below 1 are treated as 1)
     required: false
     default: '3'
   coverage_path:

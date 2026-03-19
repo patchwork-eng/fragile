@@ -41,14 +41,22 @@ function escapeRegex(str) {
 
 /**
  * Count how many other files import/require/from a given file
+ * Supports: JS/TS (import/require/from), Python (import/from X import), Ruby (require), Go (import)
  */
 export async function getReferenceCount(targetFile) {
   const basename = path.basename(targetFile).replace(/\.[^/.]+$/, '');
   const escapedBasename = escapeRegex(basename);
 
+  // Multi-language pattern:
+  // - JS/TS: import X from 'Y', require('Y'), from 'Y'
+  // - Python: import X, from X import Y
+  // - Ruby: require 'X', require_relative 'X'
+  // - Go: import "X"
+  const pattern = `(import|require|require_relative|from).*['"].*${escapedBasename}['"]|^import\\s+${escapedBasename}|^from\\s+${escapedBasename}\\s+import`;
+
   let output = '';
   try {
-    await exec.exec('git', ['grep', '-l', '-E', `(import|require|from).*['"].*${escapedBasename}['"]`], {
+    await exec.exec('git', ['grep', '-l', '-E', pattern], {
       listeners: {
         stdout: (data) => { output += data.toString(); }
       },
@@ -63,7 +71,8 @@ export async function getReferenceCount(targetFile) {
     const trimmed = line.trim();
     return trimmed &&
            (trimmed.endsWith('.js') || trimmed.endsWith('.ts') || trimmed.endsWith('.py') ||
-            trimmed.endsWith('.jsx') || trimmed.endsWith('.tsx')) &&
+            trimmed.endsWith('.jsx') || trimmed.endsWith('.tsx') ||
+            trimmed.endsWith('.rb') || trimmed.endsWith('.go')) &&
            trimmed !== targetFile;
   });
 
@@ -71,11 +80,11 @@ export async function getReferenceCount(targetFile) {
 }
 
 /**
- * Get all source files in the repo
+ * Get all source files in the repo (capped at 500 most recently modified)
  */
 export async function getAllSourceFiles() {
   let output = '';
-  await exec.exec('git', ['ls-files', '*.js', '*.ts', '*.jsx', '*.tsx', '*.py'], {
+  await exec.exec('git', ['ls-files', '*.js', '*.ts', '*.jsx', '*.tsx', '*.py', '*.rb', '*.go'], {
     listeners: {
       stdout: (data) => { output += data.toString(); }
     },
@@ -83,7 +92,36 @@ export async function getAllSourceFiles() {
     ignoreReturnCode: true
   });
 
-  return output.split('\n').filter(line => line.trim());
+  let files = output.split('\n').filter(line => line.trim());
+
+  // Cap at 500 files to prevent memory blowup on large repos
+  const MAX_FILES = 500;
+  if (files.length > MAX_FILES) {
+    core.warning(`Large repo: analyzing most recent ${MAX_FILES} files (found ${files.length})`);
+
+    // Get modification times and sort by most recent
+    const fileStats = [];
+    for (const file of files) {
+      let mtime = '';
+      try {
+        await exec.exec('git', ['log', '-1', '--format=%ct', '--', file], {
+          listeners: {
+            stdout: (data) => { mtime += data.toString(); }
+          },
+          silent: true,
+          ignoreReturnCode: true
+        });
+        fileStats.push({ file, mtime: parseInt(mtime.trim(), 10) || 0 });
+      } catch {
+        fileStats.push({ file, mtime: 0 });
+      }
+    }
+
+    fileStats.sort((a, b) => b.mtime - a.mtime);
+    files = fileStats.slice(0, MAX_FILES).map(f => f.file);
+  }
+
+  return files;
 }
 
 /**
@@ -194,12 +232,20 @@ export async function validateLicense(licenseKey, githubUsername, repo) {
 }
 
 /**
- * Get AI explanation for a fragile file
+ * Get AI explanation for a fragile file (with 30s timeout per call)
  */
 export async function getAIExplanation(openai, filePath, referenceCount, changeCount, coveragePct) {
+  const TIMEOUT_MS = 30000;
+
   try {
     const coverageStr = coveragePct !== null ? `${coveragePct.toFixed(0)}%` : 'unknown';
-    const response = await openai.chat.completions.create({
+
+    // Create a timeout promise
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT')), TIMEOUT_MS);
+    });
+
+    const apiPromise = openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{
         role: 'user',
@@ -207,6 +253,8 @@ export async function getAIExplanation(openai, filePath, referenceCount, changeC
       }],
       max_tokens: 150
     });
+
+    const response = await Promise.race([apiPromise, timeoutPromise]);
 
     // Defensive check for empty or malformed response
     const content = response?.choices?.[0]?.message?.content;
@@ -216,6 +264,10 @@ export async function getAIExplanation(openai, filePath, referenceCount, changeC
     }
     return content.trim();
   } catch (error) {
+    if (error.message === 'TIMEOUT') {
+      core.warning(`OpenAI API timeout for ${filePath}`);
+      return '[Analysis timed out — check your OpenAI API key has available credits]';
+    }
     core.warning(`OpenAI API error for ${filePath}: ${error.message}`);
     return 'Unable to generate explanation. This file has high change frequency and many dependents, making it a critical point of failure.';
   }
@@ -255,15 +307,66 @@ ${file.explanation}
 }
 
 /**
+ * Check if the repository appears to be a shallow clone
+ */
+export async function checkShallowClone() {
+  let commitCount = 0;
+  let output = '';
+
+  try {
+    await exec.exec('git', ['rev-list', '--count', 'HEAD'], {
+      listeners: {
+        stdout: (data) => { output += data.toString(); }
+      },
+      silent: true
+    });
+    commitCount = parseInt(output.trim(), 10) || 0;
+  } catch {
+    return; // Can't determine, skip warning
+  }
+
+  // Check if shallow by looking for .git/shallow file
+  let isShallow = false;
+  try {
+    let shallowOutput = '';
+    await exec.exec('git', ['rev-parse', '--is-shallow-repository'], {
+      listeners: {
+        stdout: (data) => { shallowOutput += data.toString(); }
+      },
+      silent: true
+    });
+    isShallow = shallowOutput.trim() === 'true';
+  } catch {
+    // Fallback: if we have very few commits, it might be shallow
+    isShallow = commitCount <= 2;
+  }
+
+  if (isShallow && commitCount <= 2) {
+    core.warning(
+      "Shallow clone detected (fetch-depth not 0). Fragile needs full git history for accurate analysis. " +
+      "Add 'fetch-depth: 0' to your checkout step."
+    );
+  }
+}
+
+/**
  * Main entry point
  */
 export async function run() {
   try {
+    // Check for shallow clone first (the #1 user error)
+    await checkShallowClone();
+
     const openaiKey = core.getInput('openai_key', { required: true });
     const licenseKey = core.getInput('license_key');
     const topN = parseInt(core.getInput('top_n') || '10', 10);
-    const minReferences = parseInt(core.getInput('min_references') || '3', 10);
+    let minReferences = parseInt(core.getInput('min_references') || '3', 10);
     const coveragePath = core.getInput('coverage_path');
+
+    // min_references must be at least 1
+    if (minReferences < 1) {
+      minReferences = 1;
+    }
 
     if (!openaiKey) {
       core.setFailed('openai_key is required');
