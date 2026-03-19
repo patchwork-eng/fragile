@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Fragile</title>
+  <meta name="description" content="Privacy Policy for Fragile, the GitHub Action that finds risky files in your codebase.">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg-2:      #161b22;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --text-muted:#8b949e;
+      --accent:    #f0883e;
+      --accent-light: #ffa657;
+      --radius:    8px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent-light); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* -- Nav -- */
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      background: rgba(13,17,23,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    nav .inner {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-light);
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .logo-dot {
+      width: 8px;
+      height: 8px;
+      background: #f85149;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    nav .spacer { flex: 1; }
+    nav .nav-links a {
+      color: var(--text-muted);
+      font-size: 14px;
+      transition: color 0.15s;
+    }
+    nav .nav-links a:hover { color: var(--text); text-decoration: none; }
+
+    /* -- Content -- */
+    .content {
+      padding: 80px 0;
+    }
+    .content h1 {
+      font-size: 32px;
+      font-weight: 800;
+      color: #e6edf3;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .content .updated {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 40px;
+    }
+    .content h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #e6edf3;
+      margin-top: 40px;
+      margin-bottom: 16px;
+    }
+    .content p {
+      margin-bottom: 16px;
+      color: var(--text-muted);
+    }
+    .content ul {
+      margin-bottom: 16px;
+      padding-left: 24px;
+      color: var(--text-muted);
+    }
+    .content li {
+      margin-bottom: 8px;
+    }
+
+    /* -- Footer -- */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+    .footer-links a {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="inner">
+    <a href="/" class="logo"><span class="logo-dot"></span>Fragile</a>
+    <div class="spacer"></div>
+    <div class="nav-links">
+      <a href="/">Back to home</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Content -->
+<main class="content">
+  <div class="container">
+    <h1>Privacy Policy</h1>
+    <p class="updated">Last updated: March 2026</p>
+
+    <h2>Overview</h2>
+    <p>Fragile is designed with privacy as a core principle. We do not collect, store, or have access to your source code, API keys, or analysis results.</p>
+
+    <h2>What We Don't Collect</h2>
+    <ul>
+      <li><strong>Source code:</strong> Your code never passes through our servers. Analysis runs entirely within your GitHub Actions runner.</li>
+      <li><strong>API keys:</strong> Your OpenAI API key is stored in your GitHub Secrets and used directly by the Action. We never see it.</li>
+      <li><strong>Analysis results:</strong> The FRAGILE.md report is generated and committed directly to your repository. We have no access to it.</li>
+      <li><strong>Git history:</strong> All git history analysis happens locally in your runner.</li>
+    </ul>
+
+    <h2>What We Do Collect</h2>
+    <p>When you purchase a license key, we collect:</p>
+    <ul>
+      <li><strong>Email address:</strong> Used to deliver your license key and for account recovery.</li>
+      <li><strong>Payment information:</strong> Processed by Stripe. We do not store credit card numbers.</li>
+    </ul>
+
+    <h2>Third-Party Services</h2>
+    <p>Fragile uses your OpenAI API key to send analysis prompts to OpenAI. Your use of OpenAI is subject to <a href="https://openai.com/policies/privacy-policy">OpenAI's Privacy Policy</a>.</p>
+
+    <h2>License Key Validation</h2>
+    <p>When you use a license key, the Action makes a request to our validation server with the license key only. No code or repository information is sent.</p>
+
+    <h2>Data Retention</h2>
+    <p>If you cancel your subscription, we retain your email for account records. You may request deletion by contacting us.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>We may update this Privacy Policy from time to time. We will notify license key holders of significant changes via email.</p>
+
+    <h2>Contact</h2>
+    <p>For questions about this Privacy Policy, contact us at <a href="mailto:hello@fragile.dev">hello@fragile.dev</a>.</p>
+  </div>
+</main>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="/">Home</a>
+      <a href="terms.html">Terms</a>
+      <a href="privacy.html">Privacy</a>
+    </div>
+    <p class="footer-copy">fragile.dev | Made by <a href="https://github.com/patchwork-eng">patchwork-eng</a></p>
+  </div>
+</footer>
+
+</body>
+</html>
