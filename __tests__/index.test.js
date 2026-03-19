@@ -173,6 +173,13 @@ describe('Fragile Action', () => {
     test('returns null for non-existent file', () => {
       expect(parseLcovCoverage('/nonexistent/path.info')).toBeNull();
     });
+
+    test('rejects paths outside working directory', () => {
+      // Attempting to read /etc/passwd or similar should be rejected
+      const result = parseLcovCoverage('/etc/passwd');
+      // Either returns null (file doesn't exist) or warns about path traversal
+      expect(result).toBeNull();
+    });
   });
 
   describe('License validation', () => {
@@ -333,6 +340,37 @@ describe('Fragile Action', () => {
       expect(explanation).toContain('Unable to generate explanation');
       expect(mockCore.warning).toHaveBeenCalled();
     });
+
+    test('handles empty choices array gracefully', async () => {
+      const openai = {
+        chat: {
+          completions: {
+            create: jest.fn().mockResolvedValue({ choices: [] })
+          }
+        }
+      };
+
+      const explanation = await getAIExplanation(openai, 'test.js', 5, 10, 50);
+
+      expect(explanation).toContain('Unable to generate explanation');
+      expect(mockCore.warning).toHaveBeenCalledWith(expect.stringContaining('empty response'));
+    });
+
+    test('handles null content gracefully', async () => {
+      const openai = {
+        chat: {
+          completions: {
+            create: jest.fn().mockResolvedValue({
+              choices: [{ message: { content: null } }]
+            })
+          }
+        }
+      };
+
+      const explanation = await getAIExplanation(openai, 'test.js', 5, 10, 50);
+
+      expect(explanation).toContain('Unable to generate explanation');
+    });
   });
 
   describe('git log parsing', () => {
@@ -374,6 +412,22 @@ describe('Fragile Action', () => {
 
       const count = await getReferenceCount('src/target.js');
       expect(count).toBe(3);
+    });
+
+    test('escapes regex special characters in filenames', async () => {
+      let capturedPattern = null;
+      mockExec.exec.mockImplementation((cmd, args, options) => {
+        if (args && args[0] === 'grep') {
+          capturedPattern = args[3]; // The regex pattern argument
+          options?.listeners?.stdout?.(Buffer.from(''));
+        }
+        return Promise.resolve(0);
+      });
+
+      await getReferenceCount('src/foo+bar[1].js');
+
+      // The pattern should have escaped + and [ and ]
+      expect(capturedPattern).toContain('foo\\+bar\\[1\\]');
     });
   });
 

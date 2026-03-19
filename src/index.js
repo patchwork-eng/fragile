@@ -33,15 +33,22 @@ export async function getChangeFrequency() {
 }
 
 /**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
  * Count how many other files import/require/from a given file
  */
 export async function getReferenceCount(targetFile) {
   const basename = path.basename(targetFile).replace(/\.[^/.]+$/, '');
-  const relativePath = targetFile.replace(/\.[^/.]+$/, '');
+  const escapedBasename = escapeRegex(basename);
 
   let output = '';
   try {
-    await exec.exec('git', ['grep', '-l', '-E', `(import|require|from).*['"].*${basename}['"]`], {
+    await exec.exec('git', ['grep', '-l', '-E', `(import|require|from).*['"].*${escapedBasename}['"]`], {
       listeners: {
         stdout: (data) => { output += data.toString(); }
       },
@@ -87,21 +94,31 @@ export function parseLcovCoverage(coveragePath) {
     return null;
   }
 
+  // Security: Validate coverage path is within current working directory
+  const cwd = process.cwd();
+  const resolvedPath = path.resolve(coveragePath);
+  if (!resolvedPath.startsWith(cwd + path.sep) && resolvedPath !== cwd) {
+    core.warning(`coverage_path must be within the repository: ${coveragePath}`);
+    return null;
+  }
+
   const content = fs.readFileSync(coveragePath, 'utf8');
 
   if (coveragePath.endsWith('.json')) {
     try {
       const json = JSON.parse(content);
       const coverage = {};
-      if (json.total) {
-        return null;
-      }
+      // Jest coverage-summary.json format has "total" plus per-file entries
       for (const [filePath, data] of Object.entries(json)) {
-        if (data.lines) {
+        // Skip the "total" summary entry
+        if (filePath === 'total') {
+          continue;
+        }
+        if (data && data.lines && typeof data.lines.pct === 'number') {
           coverage[filePath] = data.lines.pct;
         }
       }
-      return coverage;
+      return Object.keys(coverage).length > 0 ? coverage : null;
     } catch {
       return null;
     }
@@ -191,7 +208,13 @@ export async function getAIExplanation(openai, filePath, referenceCount, changeC
       max_tokens: 150
     });
 
-    return response.choices[0].message.content.trim();
+    // Defensive check for empty or malformed response
+    const content = response?.choices?.[0]?.message?.content;
+    if (!content) {
+      core.warning(`OpenAI returned empty response for ${filePath}`);
+      return 'Unable to generate explanation. This file has high change frequency and many dependents, making it a critical point of failure.';
+    }
+    return content.trim();
   } catch (error) {
     core.warning(`OpenAI API error for ${filePath}: ${error.message}`);
     return 'Unable to generate explanation. This file has high change frequency and many dependents, making it a critical point of failure.';
@@ -270,7 +293,7 @@ export async function run() {
 
     core.info('Analyzing repository for fragile files...');
 
-    const openai = new OpenAI({ apiKey: openaiKey });
+    const openai = new OpenAI({ apiKey: openaiKey, timeout: 30000 });
     const changeCounts = await getChangeFrequency();
     const allFiles = await getAllSourceFiles();
     const coverage = parseLcovCoverage(coveragePath);
@@ -282,10 +305,6 @@ export async function run() {
     for (const file of allFiles) {
       const changeCount = changeCounts[file] || 0;
       const referenceCount = await getReferenceCount(file);
-
-      if (referenceCount < minReferences && changeCount === 0) {
-        continue;
-      }
 
       if (referenceCount < minReferences) {
         continue;
