@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fragile — Find the files you're afraid to touch.</title>
+  <meta name="description" content="Fragile is a GitHub Action that finds the load-bearing, dangerous files in your codebase. It analyzes structural signals and uses AI to explain why each file is risky.">
+  <link rel="canonical" href="https://fragile.dev/">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --bg-2:      #161b22;
+      --bg-3:      #21262d;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --text-muted:#8b949e;
+      --accent:    #f0883e;
+      --accent-2:  #db7c37;
+      --accent-light: #ffa657;
+      --code-bg:   #0d1117;
+      --radius:    8px;
+      --red:       #f85149;
+      --orange:    #f0883e;
+      --yellow:    #d29922;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--accent-light); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    section { padding: 80px 0; }
+    section + section { border-top: 1px solid var(--border); }
+
+    /* -- Nav -- */
+    nav {
+      border-bottom: 1px solid var(--border);
+      padding: 16px 0;
+      position: sticky;
+      top: 0;
+      background: rgba(13,17,23,0.92);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    nav .inner {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--accent-light);
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .logo-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--red);
+      border-radius: 50%;
+      display: inline-block;
+    }
+    nav .spacer { flex: 1; }
+    nav .nav-links { display: flex; gap: 24px; align-items: center; }
+    nav .nav-links a {
+      color: var(--text-muted);
+      font-size: 14px;
+      transition: color 0.15s;
+    }
+    nav .nav-links a:hover { color: var(--text); text-decoration: none; }
+    nav .nav-cta {
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 14px;
+      padding: 8px 16px;
+      border-radius: var(--radius);
+      transition: background 0.15s;
+    }
+    nav .nav-cta:hover { background: var(--accent-2); text-decoration: none; }
+
+    /* -- Hero -- */
+    .hero {
+      padding: 100px 0 80px;
+      text-align: center;
+    }
+    .hero h1 {
+      font-size: clamp(28px, 5vw, 52px);
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 24px;
+      color: #e6edf3;
+    }
+    .hero h1 em {
+      font-style: normal;
+      color: var(--accent-light);
+    }
+    .hero p {
+      font-size: clamp(16px, 2.5vw, 20px);
+      color: var(--text-muted);
+      max-width: 620px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .btn {
+      display: inline-block;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 16px;
+      padding: 14px 28px;
+      border-radius: var(--radius);
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:hover { background: var(--accent-2); text-decoration: none; transform: translateY(-1px); }
+
+    /* -- Code blocks -- */
+    .code-wrap {
+      position: relative;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 32px;
+      overflow: hidden;
+      text-align: left;
+    }
+    .code-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+    }
+    .code-header span {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .copy-btn {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-muted);
+      font-size: 12px;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .copy-btn:hover { background: var(--bg-3); color: var(--text); }
+    pre {
+      padding: 24px;
+      overflow-x: auto;
+      font-family: "SF Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+    .kw { color: var(--accent-light); }
+    .str { color: #a5d6ff; }
+    .cmt { color: var(--text-muted); }
+
+    /* -- How it works -- */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .step {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+    }
+    .step-num {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    .step h3 {
+      font-size: 17px;
+      font-weight: 700;
+      color: #e6edf3;
+      margin-bottom: 8px;
+    }
+    .step p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* -- Section headings -- */
+    .section-label {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 12px;
+    }
+    h2 {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 800;
+      color: #e6edf3;
+      letter-spacing: -0.5px;
+      margin-bottom: 16px;
+    }
+    .section-desc {
+      font-size: 17px;
+      color: var(--text-muted);
+      max-width: 600px;
+      line-height: 1.7;
+    }
+
+    /* -- FRAGILE.md output -- */
+    .fragile-output {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-top: 48px;
+      overflow: hidden;
+    }
+    .fragile-output-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-3);
+    }
+    .fragile-output-header span {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 13px;
+      color: var(--accent-light);
+      font-weight: 600;
+    }
+    .fragile-output-body {
+      padding: 24px;
+    }
+    .fragile-file {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .fragile-file:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+    .fragile-file-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .fragile-emoji {
+      font-size: 18px;
+    }
+    .fragile-file-name {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 14px;
+      color: #e6edf3;
+      font-weight: 600;
+    }
+    .fragile-score {
+      font-family: "SF Mono", "Fira Code", Consolas, monospace;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .score-high {
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--red);
+    }
+    .score-medium {
+      background: rgba(240, 136, 62, 0.15);
+      color: var(--orange);
+    }
+    .score-low {
+      background: rgba(210, 153, 34, 0.15);
+      color: var(--yellow);
+    }
+    .fragile-explanation {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      padding-left: 30px;
+    }
+
+    /* -- Pricing -- */
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 24px;
+      margin-top: 48px;
+    }
+    .plan {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+    }
+    .plan.featured {
+      border-color: var(--accent);
+      position: relative;
+    }
+    .plan-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .plan-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+    .plan-price {
+      font-size: 36px;
+      font-weight: 800;
+      color: #e6edf3;
+      line-height: 1;
+      margin-bottom: 4px;
+    }
+    .plan-price span {
+      font-size: 16px;
+      font-weight: 400;
+      color: var(--text-muted);
+    }
+    .plan-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+    .plan-features {
+      list-style: none;
+      flex: 1;
+      margin-bottom: 28px;
+    }
+    .plan-features li {
+      font-size: 14px;
+      color: var(--text);
+      padding: 6px 0;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .plan-features li::before {
+      content: '\2713';
+      color: var(--accent-light);
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .plan-cta {
+      display: block;
+      text-align: center;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 600;
+      font-size: 15px;
+      padding: 12px;
+      border-radius: var(--radius);
+      transition: background 0.15s;
+    }
+    .plan-cta:hover { background: var(--accent-2); text-decoration: none; }
+    .plan-cta.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .plan-cta.secondary:hover { background: var(--bg-3); }
+
+    /* -- BYOK -- */
+    .byok-box {
+      margin-top: 48px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 24px;
+      font-size: 15px;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .byok-box strong { color: #e6edf3; }
+
+    /* -- Cross-sell -- */
+    .cross-sell {
+      background: var(--bg-2);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 48px 0;
+    }
+    .cross-sell-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+    .cross-sell-item {
+      padding: 24px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .cross-sell-item h3 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #e6edf3;
+    }
+    .cross-sell-item p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .cross-sell-item a {
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    /* -- Footer -- */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+      text-align: center;
+    }
+    .footer-links {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 24px;
+      margin-bottom: 16px;
+    }
+    .footer-links a {
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .footer-links a:hover { color: var(--text); }
+    .footer-copy {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    .footer-suite {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 600px) {
+      nav .nav-links { gap: 16px; }
+      nav .nav-cta { display: none; }
+      .steps { grid-template-columns: 1fr; }
+      .pricing-grid { grid-template-columns: 1fr; }
+      .cross-sell-grid { grid-template-columns: 1fr; }
+      .fragile-file-header { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Nav -->
+<nav>
+  <div class="inner">
+    <span class="logo"><span class="logo-dot"></span>Fragile</span>
+    <div class="spacer"></div>
+    <div class="nav-links">
+      <a href="#how-it-works">How it works</a>
+      <a href="#pricing">Pricing</a>
+      <a href="https://github.com/patchwork-eng/fragile">GitHub</a>
+      <a href="https://github.com/marketplace/actions/fragile" class="nav-cta">View on Marketplace</a>
+    </div>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <h1>Find the files you're<br><em>afraid to touch.</em></h1>
+    <p>Every codebase has load-bearing code nobody wants to touch. Fragile finds it, scores it, and tells you why — before you find out the hard way.</p>
+    <a href="#install" class="btn">Add to your repo</a>
+
+    <!-- Hero code example -->
+    <div class="code-wrap" style="max-width: 680px; margin: 48px auto 0;">
+      <div class="code-header">
+        <span>FRAGILE.md</span>
+      </div>
+      <div class="fragile-output-body">
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F534;</span>
+            <span class="fragile-file-name">auth/session.js</span>
+            <span class="fragile-score score-high">92</span>
+          </div>
+          <p class="fragile-explanation">Touched 47 times in the last 6 months, referenced by 23 files, and has zero test coverage. This is the single riskiest file in the codebase.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F7E0;</span>
+            <span class="fragile-file-name">db/migrations.js</span>
+            <span class="fragile-score score-medium">78</span>
+          </div>
+          <p class="fragile-explanation">High change frequency with multiple contributors. Last 3 changes introduced regressions that were caught in production.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F7E1;</span>
+            <span class="fragile-file-name">api/middleware.js</span>
+            <span class="fragile-score score-low">64</span>
+          </div>
+          <p class="fragile-explanation">Central request handler with 31 dependents. Well-tested but any change ripples through the entire API surface.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- How it works -->
+<section id="how-it-works">
+  <div class="container">
+    <p class="section-label">How it works</p>
+    <h2>Three steps. Zero guesswork.</h2>
+    <p class="section-desc">Drop two lines of YAML into your workflow. Fragile analyzes your repo and generates a risk report automatically.</p>
+    <div class="steps">
+      <div class="step">
+        <p class="step-num">Step 01</p>
+        <h3>Add to your workflow</h3>
+        <p>Two lines of YAML. Point it at your repo, give it your OpenAI key, and you're done.</p>
+      </div>
+      <div class="step">
+        <p class="step-num">Step 02</p>
+        <h3>Fragile analyzes signals</h3>
+        <p>Git history, file references, test coverage — all analyzed locally. No source code sent anywhere.</p>
+      </div>
+      <div class="step">
+        <p class="step-num">Step 03</p>
+        <h3>FRAGILE.md lands in your repo</h3>
+        <p>A ranked list of your riskiest files with scores and plain-English explanations for each one.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- The output -->
+<section id="output">
+  <div class="container">
+    <p class="section-label">The output</p>
+    <h2>A risk report that actually explains itself.</h2>
+    <p class="section-desc">Not just a list of files — Fragile tells you <em>why</em> each file is dangerous so you know what to do about it.</p>
+
+    <div class="fragile-output">
+      <div class="fragile-output-header">
+        <span>FRAGILE.md</span>
+      </div>
+      <div class="fragile-output-body">
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F534;</span>
+            <span class="fragile-file-name">auth/session.js</span>
+            <span class="fragile-score score-high">92</span>
+          </div>
+          <p class="fragile-explanation">Touched 47 times in the last 6 months, referenced by 23 files, and has zero test coverage. This is the single riskiest file in the codebase.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F534;</span>
+            <span class="fragile-file-name">lib/cache.js</span>
+            <span class="fragile-score score-high">87</span>
+          </div>
+          <p class="fragile-explanation">Core caching layer with complex invalidation logic. 8 different contributors have touched this file, and the last two changes caused cache poisoning bugs.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F7E0;</span>
+            <span class="fragile-file-name">db/migrations.js</span>
+            <span class="fragile-score score-medium">78</span>
+          </div>
+          <p class="fragile-explanation">High change frequency with multiple contributors. Last 3 changes introduced regressions that were caught in production.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F7E0;</span>
+            <span class="fragile-file-name">api/middleware.js</span>
+            <span class="fragile-score score-medium">71</span>
+          </div>
+          <p class="fragile-explanation">Central request handler with 31 dependents. Well-tested but any change ripples through the entire API surface.</p>
+        </div>
+        <div class="fragile-file">
+          <div class="fragile-file-header">
+            <span class="fragile-emoji">&#x1F7E1;</span>
+            <span class="fragile-file-name">utils/date.js</span>
+            <span class="fragile-score score-low">58</span>
+          </div>
+          <p class="fragile-explanation">Used by 44 files across the codebase. Low change frequency but timezone edge cases have caused bugs twice this quarter.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section id="pricing">
+  <div class="container">
+    <p class="section-label">Pricing</p>
+    <h2>Start free. Upgrade when you need private repos.</h2>
+    <p class="section-desc">Public repos are always free. Private repo support requires a license key.</p>
+
+    <div class="pricing-grid">
+      <!-- Free -->
+      <div class="plan">
+        <p class="plan-name">Free</p>
+        <p class="plan-price">$0</p>
+        <p class="plan-desc">For open source and public repos</p>
+        <ul class="plan-features">
+          <li>Unlimited public repos</li>
+          <li>Full FRAGILE.md report</li>
+          <li>Unlimited runs</li>
+          <li>Bring your own OpenAI key</li>
+        </ul>
+        <a href="#install" class="plan-cta secondary">Install now</a>
+      </div>
+
+      <!-- Indie -->
+      <div class="plan featured">
+        <span class="plan-badge">Most popular</span>
+        <p class="plan-name">Indie</p>
+        <p class="plan-price">$9<span>/mo</span></p>
+        <p class="plan-desc">For solo devs with private repos</p>
+        <ul class="plan-features">
+          <li>Private repos</li>
+          <li>Everything in Free</li>
+          <li>License key via email</li>
+          <li>Cancel anytime</li>
+        </ul>
+        <a href="#" class="plan-cta">Get Indie</a>
+      </div>
+
+      <!-- Teams -->
+      <div class="plan">
+        <p class="plan-name">Teams</p>
+        <p class="plan-price">$29<span>/mo</span></p>
+        <p class="plan-desc">For organizations</p>
+        <ul class="plan-features">
+          <li>Everything in Indie</li>
+          <li>Up to 10 repos</li>
+          <li>Org-wide license key</li>
+          <li>Cancel anytime</li>
+        </ul>
+        <a href="#" class="plan-cta">Get Teams</a>
+      </div>
+    </div>
+
+    <p style="text-align: center; margin-top: 32px; font-size: 14px; color: var(--text-muted);">
+      Get a license key at <a href="https://fragile.dev">fragile.dev</a>
+    </p>
+  </div>
+</section>
+
+<!-- BYOK -->
+<section id="byok">
+  <div class="container">
+    <p class="section-label">Bring your own key</p>
+    <h2>Your OpenAI key. Your usage.</h2>
+    <p class="section-desc">Billed directly to you. No middleman, no markup, no usage caps from us.</p>
+
+    <div class="byok-box">
+      <strong>How it works:</strong> Fragile sends analysis prompts directly to OpenAI using your API key. We never see your key, your code, or your usage. Typical repo costs <strong>$0.01–0.05 per run</strong> depending on codebase size.
+    </div>
+  </div>
+</section>
+
+<!-- Quick start -->
+<section id="install">
+  <div class="container">
+    <p class="section-label">Quick start</p>
+    <h2>Two lines of YAML.</h2>
+    <p class="section-desc">Add the following workflow file to your repo. Fragile will generate a risk report on every push to main.</p>
+
+    <div class="code-wrap">
+      <div class="code-header">
+        <span>.github/workflows/fragile.yml</span>
+        <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+      </div>
+      <pre id="yaml-block"><span class="kw">name</span>: <span class="str">Fragile</span>
+<span class="kw">on</span>:
+  <span class="kw">push</span>:
+    <span class="kw">branches</span>: <span class="str">[main]</span>
+  <span class="kw">workflow_dispatch</span>:
+
+<span class="kw">jobs</span>:
+  <span class="kw">fragile</span>:
+    <span class="kw">runs-on</span>: <span class="str">ubuntu-latest</span>
+    <span class="kw">steps</span>:
+      - <span class="kw">uses</span>: <span class="str">actions/checkout@v4</span>
+        <span class="kw">with</span>:
+          <span class="kw">fetch-depth</span>: <span class="str">0</span>  <span class="cmt"># REQUIRED - Fragile needs full git history</span>
+
+      - <span class="kw">uses</span>: <span class="str">patchwork-eng/fragile@v1</span>
+        <span class="kw">with</span>:
+          <span class="kw">openai_key</span>: <span class="str">${{ secrets.OPENAI_KEY }}</span>
+          <span class="cmt"># license_key: ${{ secrets.FRAGILE_LICENSE_KEY }}  # Required for private repos</span></pre>
+    </div>
+
+    <p style="margin-top:20px;font-size:14px;color:var(--text-muted);">
+      Add your OpenAI API key to <strong style="color:var(--text);">Settings &rarr; Secrets and variables &rarr; Actions</strong> as <code style="font-family:monospace;font-size:12px;background:var(--bg-2);padding:2px 6px;border-radius:4px;">OPENAI_KEY</code>. That's it.
+    </p>
+  </div>
+</section>
+
+<!-- Also from patchwork-eng -->
+<section class="cross-sell">
+  <div class="container">
+    <p class="section-label">Also from patchwork-eng</p>
+    <div class="cross-sell-grid">
+      <div class="cross-sell-item">
+        <h3>Difflog</h3>
+        <p>Reads your git commits when you ship and writes a human-readable changelog automatically. Same BYOK model.</p>
+        <a href="https://difflog.io">Check out Difflog &rarr;</a>
+      </div>
+      <div class="cross-sell-item">
+        <h3>AutoPR</h3>
+        <p>Reads your diff when a PR opens and writes the description for you — what changed, what to test, what broke.</p>
+        <a href="https://autopr.dev">Check out AutoPR &rarr;</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="container">
+    <div class="footer-links">
+      <a href="https://github.com/patchwork-eng/fragile">GitHub</a>
+      <a href="terms.html">Terms</a>
+      <a href="privacy.html">Privacy</a>
+    </div>
+    <p class="footer-copy">fragile.dev | Made by <a href="https://github.com/patchwork-eng">patchwork-eng</a></p>
+    <p class="footer-suite">Part of the patchwork suite: <a href="https://difflog.io">Difflog</a> · <a href="https://autopr.dev">AutoPR</a> · Fragile</p>
+  </div>
+</footer>
+
+<script>
+  const rawYaml = `name: Fragile
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  fragile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # REQUIRED - Fragile needs full git history
+
+      - uses: patchwork-eng/fragile@v1
+        with:
+          openai_key: \${{ secrets.OPENAI_KEY }}
+          # license_key: \${{ secrets.FRAGILE_LICENSE_KEY }}  # Required for private repos`;
+
+  function copyCode(btn) {
+    navigator.clipboard.writeText(rawYaml).then(() => {
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 2000);
+    });
+  }
+</script>
+
+</body>
+</html>
