@@ -1,0 +1,31 @@
+name: Fragile
+description: Find the files you are afraid to touch
+author: patchwork-eng
+
+branding:
+  icon: alert-triangle
+  color: red
+
+inputs:
+  openai_key:
+    description: OpenAI API key
+    required: true
+  license_key:
+    description: License key (required for private repos)
+    required: false
+  top_n:
+    description: Number of fragile files to surface
+    required: false
+    default: '10'
+  min_references:
+    description: Minimum reference count to include a file
+    required: false
+    default: '3'
+  coverage_path:
+    description: Path to lcov.info or coverage-summary.json
+    required: false
+    default: ''
+
+runs:
+  using: node20
+  main: dist/index.js
