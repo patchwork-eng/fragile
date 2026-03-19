@@ -197,9 +197,9 @@ export function calculateRiskScore(changeCount, referenceCount, coveragePct) {
  * Get emoji based on risk score
  */
 export function getEmoji(score) {
-  if (score >= 80) return '🔴';
-  if (score >= 60) return '🟠';
-  return '🟡';
+  if (score >= 80) return String.fromCodePoint(0x1F534); // red circle
+  if (score >= 60) return String.fromCodePoint(0x1F7E0); // orange circle
+  return String.fromCodePoint(0x1F7E1); // yellow circle
 }
 
 /**
@@ -482,4 +482,5 @@ export async function run() {
 }
 
 run();
+
 
