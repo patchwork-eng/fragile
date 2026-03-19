@@ -1,0 +1,19 @@
+name: Fragile (dogfood)
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * 1'  # Weekly Monday 9am
+
+permissions:
+  contents: write
+
+jobs:
+  fragile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # ⚠️ REQUIRED — Fragile needs full git history
+      - uses: ./
+        with:
+          openai_key: ${{ secrets.OPENAI_KEY }}
