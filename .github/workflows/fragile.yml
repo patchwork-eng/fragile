@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # ⚠️ REQUIRED — Fragile needs full git history
+          fetch-depth: 0  # REQUIRED — Fragile needs full git history
       - uses: ./
         with:
           openai_key: ${{ secrets.OPENAI_KEY }}
